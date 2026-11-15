@@ -20,10 +20,14 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Write OCI private key
+        env:
+          OCI_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
         run: |
           mkdir -p /home/runner/.oci
-          printf '%s' "${{ secrets.OCI_PRIVATE_KEY }}" > /home/runner/.oci/oci_key.pem
+          printf '%s\n' "$OCI_KEY" > /home/runner/.oci/oci_key.pem
           chmod 600 /home/runner/.oci/oci_key.pem
+          head -n 1 /home/runner/.oci/oci_key.pem
+          tail -n 1 /home/runner/.oci/oci_key.pem
 
       - name: Try to create instance
         run: php ./index.php
