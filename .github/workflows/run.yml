@@ -21,13 +21,12 @@ jobs:
 
       - name: Write OCI private key
         env:
-          OCI_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_KEY_B64: ${{ secrets.OCI_PRIVATE_KEY_B64 }}
         run: |
           mkdir -p /home/runner/.oci
-          printf '%s\n' "$OCI_KEY" > /home/runner/.oci/oci_key.pem
+          echo "$OCI_KEY_B64" | base64 -d > /home/runner/.oci/oci_key.pem
           chmod 600 /home/runner/.oci/oci_key.pem
-          head -n 1 /home/runner/.oci/oci_key.pem
-          tail -n 1 /home/runner/.oci/oci_key.pem
+          wc -l /home/runner/.oci/oci_key.pem
 
       - name: Try to create instance
         run: php ./index.php
