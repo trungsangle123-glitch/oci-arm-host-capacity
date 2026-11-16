@@ -5,9 +5,20 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+# Needed so the workflow can disable itself after success
+permissions:
+  contents: read
+  actions: write
+
+# Never run two attempts at the same time
+concurrency:
+  group: create-a1
+  cancel-in-progress: false
+
 jobs:
   create:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -15,6 +26,13 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
+          tools: composer
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
@@ -26,10 +44,13 @@ jobs:
           mkdir -p /home/runner/.oci
           echo "$OCI_KEY_B64" | base64 -d > /home/runner/.oci/oci_key.pem
           chmod 600 /home/runner/.oci/oci_key.pem
-          wc -l /home/runner/.oci/oci_key.pem
 
       - name: Try to create instance
-        run: php ./index.php
+        run: |
+          # Capacity errors make the script fail; don't mark the run as failed
+          set +e
+          php ./index.php 2>&1 | tee output.txt
+          exit 0
         env:
           OCI_REGION: ${{ secrets.OCI_REGION }}
           OCI_USER_ID: ${{ secrets.OCI_USER_ID }}
@@ -45,3 +66,17 @@ jobs:
           OCI_MAX_INSTANCES: ${{ secrets.OCI_MAX_INSTANCES }}
           OCI_BOOT_VOLUME_SIZE_IN_GBS: ${{ secrets.OCI_BOOT_VOLUME_SIZE_IN_GBS }}
           OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+
+      - name: Disable workflow after success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Adjust this to whatever index.php prints when an instance is created.
+          # It must NOT appear in "Out of host capacity" error output.
+          SUCCESS_PATTERN: lifecycleState
+        run: |
+          if grep -qi "$SUCCESS_PATTERN" output.txt && ! grep -qi "out of host capacity" output.txt; then
+            echo "Instance created, disabling workflow."
+            gh workflow disable "${{ github.workflow }}" --repo "$GITHUB_REPOSITORY"
+          else
+            echo "No instance created this run."
+          fi
